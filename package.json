@@ -1,0 +1,21 @@
+{
+  "name": "json-stub",
+  "version": "0.0.1",
+  "description": "Simple server that act as a Json backend",
+  "scripts": {
+    "start":"node ./lib/index.js"
+  },
+  "main": "./lib/index.js",
+  "repository":{
+    "type": "git",
+    "url": "https://github.com/tettusud/json-stub.git"
+  },
+  "devDependencies": {
+    "@types/node": "^6.0.55",
+    "typescript": "^2.1.4",
+    "typings": "^2.1.0"
+  },
+  "dependencies": {
+
+  }
+}
