@@ -3,11 +3,13 @@ import fs= require('fs');
 import url=require('url');
 import path=require('path');
 
-import {reverseProxy} from "./util";
+import {getArgValue, _obj} from "./utils";
+import {reverseProxy} from "./routes";
+import {read} from './fileutils';
 
-function endsWith(suffix: string, str: string) {
-    return str.indexOf(suffix, str.length - suffix.length) !== -1;
-}
+//by default app will look for routes.json and other jsons in stubs path
+var port=3000;
+
 
 /***
  *
@@ -15,95 +17,106 @@ function endsWith(suffix: string, str: string) {
 class JsonStub {
 
     static jsonStub: JsonStub;
-
     private routes: any;
-
     /**
      *
      */
     constructor() {
         try {
-            let root = path.resolve(__dirname, './');
-            let _routes = path.join(root, 'routes.json');
-            let data = fs.readFileSync(_routes, 'utf8');
-            this.routes = JSON.parse(data);
+            let _routes = 'routes.json';
+            read(_routes,(data:any) =>{
+                this.routes = JSON.parse(data);
+            });
         } catch (e) {
             console.error('routes.json file not found ,please pass it with --routes option', e);
             throw e;
         }
     }
-
     /**
      *
      * @returns {JsonStub}
      */
     static getInstance() {
         if (!JsonStub.jsonStub) {
-            JsonStub.jsonStub = new JsonStub();
+          return  JsonStub.jsonStub = new JsonStub();
         }
-        return new JsonStub();
+        return  JsonStub.jsonStub;
     }
 
-
-    send(request, response) {
-
-        console.log('sending request');
-
-        let _route = url.parse(request.url).pathname;
-
-        if (!this.routes) {
-            return this.error(response, 'unable to find routes.json, please initialize using --routes options');
-        }
+    send(request, response,body?:string) {
 
 
-        //let _path: string = this.routes[_route];
+        try{
+            let _route = url.parse(request.url).pathname;
 
-        let _path = reverseProxy(this.routes,_route);
-
-        if (!_path) {
-            return this.error(response, 'Looks like no json file is configured in routes.json file for the route ,may be you missed' +
-                'the leading \ for example {\"/hello/world\"}' + _route);
-        }
-        _path = _path.trim();
-
-        let _filepath = path.join(__dirname, _path).trim();
-
-        if (!endsWith(".json", _filepath)) {
-            _filepath = _filepath + ".json";
-        }
-
-        fs.readFile(_filepath, 'UTF-8', function (err, data) {
-
-            if (err) {
-                return this.error(response, err);
-            } else {
-                response.writeHeader(200, {"Content-Type": "application/json"});
-                response.write(data, "UTF-8");
-                response.end();
+            if (!this.routes) {
+                throw new Error("Unable to find routes.json, please initialize using --routes options");
             }
-
-        });
+             reverseProxy(this.routes,_route ,body,(data)=>{
+              try {
+                  if (!data) {
+                       this.respond(response, 200, _obj("Looks like no json file is configured in routes.json file for the route"));
+                       return;
+                  } else {
+                        this.respond(response, 200, data);
+                        return;
+                  }
+              }catch(e){
+                    this.sendError(response, e);
+                    return;
+              }
+            });
+        }catch(e){
+            console.error(' error here is ',JSON.stringify(e));
+              this.sendError(response, e);
+              return;
+        }
     }
 
-    error(response, err) {
-        response.writeHeader(500, {"Content-Type": "application/json"});
-        response.write(err + "\n");
+    sendError(response,err){
+       return  this.respond(response,500,err);
+    }
+
+    respond(response, status,content) {
+        console.log(' respond:method type of content  ',content);
+
+        if(typeof content!=='string'){
+            content=JSON.stringify(content);
+        }
+        response.writeHeader(status, {"Content-Type": "application/json"});
+        response.write(content + "\n");
         response.end();
+        return;
     }
-
 }
-
 
 /**
  *
  */
 function init(port?: number) {
+    port=getArgValue('-port') || port;
+
+    let jsonStub = JsonStub.getInstance();
 
     http.createServer((request, response) => {
-        let jsonStub = JsonStub.getInstance();
-        jsonStub.send(request, response);
 
-    }).listen(port | 3001);
+        let method=request.method;
+
+        if(method==='POST' || method==='PUT'){
+            let body = "";
+            request.on('data', function (chunk) {
+                body += chunk;
+            });
+            request.on('end', function () {
+                jsonStub.send(request, response,body);
+            });
+        }else{
+            jsonStub.send(request, response);
+        }
+
+    }).listen(port);
+
+    console.log('Server started on port ',port);
 }
 
 init();
